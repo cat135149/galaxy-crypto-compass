@@ -19,7 +19,8 @@ class MockGenai:
             def generate_content(self, prompt):
                 raise Exception("Gemini SDK 導入失敗，無法連接 AI 服務。")
         return MockModel()
-genai = MockGenai()
+# 由於我們使用 requests 庫，此處不再需要 genai 變量，但保留以防萬一
+# genai = MockGenai()
 
 # ==========================================
 # 0. 頁面設定與初始化
@@ -36,32 +37,22 @@ if 'api_key_input' not in st.session_state:
 if 'last_used_model' not in st.session_state:
     st.session_state.last_used_model = "N/A" # 儲存實際用於生成報告的模型
 
-# --- 賽博龐克風格 CSS ---
+# --- 賽博龐克風格 CSS (最終修正 Sidebar 白色背景) ---
 st.markdown("""
 <style>
-    /* 1. 引入 Google Font (Fira Code - 更具科技感) */
-    @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500;700&display=swap');
-
-    /* 基礎設置 */
+    /* 1. 基礎設置 */
     .stApp {
         background-color: #0d0d0d; 
         color: #00e5ff; 
-        font-family: 'Fira Code', monospace; /* 🚀 全局字體替換 */
+        font-family: 'Roboto Mono', monospace;
     }
 
-    /* 2. 深度定制 Sidebar */
-    .st-emotion-cache-1d391kg { /* Sidebar 容器 Class */
+    /* Sidebar 容器和背景色 */
+    .st-emotion-cache-1d391kg { /* 這是 Streamlit Sidebar 的容器 Class */
         background-color: #0d0d0d !important; 
-        border-right: 2px solid #ff00ff; /* 霓虹粉色邊框 */
-        box-shadow: 2px 0 10px #ff00ff55; /* 霓虹陰影 */
-    }
-    
-    /* Sidebar 內部容器顏色修正 */
-    .st-emotion-cache-r69vge { /* Sidebar 內部內容區塊 */
-        background-color: #0d0d0d !important;
     }
 
-    /* 全局文本顏色覆蓋 */
+    /* 2. Sidebar 文本和標題顏色 */
     h1, h2, h3, h4, h5, h6, label, .stMarkdown, .stButton>button {
         color: #00e5ff !important; 
     }
@@ -79,16 +70,10 @@ st.markdown("""
         border: 1px solid #00e5ff; 
         border-radius: 5px;
         box-shadow: 0 0 5px #00e5ff55; 
-        font-family: 'Fira Code', monospace;
     }
     .stTextInput>div>div>input:focus, .stSelectbox>div>div>div:focus {
         border-color: #ff00ff; 
         box-shadow: 0 0 8px #ff00ff;
-    }
-
-    /* 3. 分隔線顏色優化 (更明顯的霓虹效果) */
-    .st-emotion-cache-1px212h { /* st.divider 的 Class */
-        border-top: 1px dashed #ffff00 !important;
     }
 
     /* 按鈕樣式 (通用) */
@@ -97,7 +82,8 @@ st.markdown("""
         color: #00e5ff !important; 
         border: 1px solid #00e5ff; 
         border-radius: 8px;
-        font-weight: 500; /* 中等粗細，更優雅 */
+        padding: 10px 20px;
+        font-weight: bold;
         box-shadow: 0 0 5px #00e5ff88;
         transition: all 0.2s ease-in-out;
     }
@@ -113,49 +99,118 @@ st.markdown("""
         background-color: #ff00ff; 
         color: #1a1a1a !important;
         border: 1px solid #ff00ff;
-        box-shadow: 0 0 15px #ff00ff; /* 更強烈的陰影 */
-        font-weight: 700; /* 加粗 */
+        box-shadow: 0 0 8px #ff00ff;
     }
     .stButton[data-testid*="stFormSubmitButton"]>button:hover, .stButton>button[data-testid*="primary"]:hover {
         background-color: #00e5ff; 
         color: #1a1a1a !important;
         border-color: #00e5ff;
-        box-shadow: 0 0 20px #00e5ff;
+        box-shadow: 0 0 12px #00e5ff;
     }
 
     /* 輔助資訊 (st.caption) 優化 */
     .stText .stCaption {
-        color: #ffff00 !important; /* 改為霓虹黃 */
-        font-size: 0.75rem; /* 稍微縮小 */
+        color: #ff00ff !important; 
+        font-size: 0.8rem;
     }
 
-    /* 4. 評分卡 (Score Card) 邊框與陰影優化 */
+    /* 3. 警告、成功、資訊訊息 (st.info, st.success, st.error) 最終修正 */
+    div.stAlert {
+        background-color: #1a1a1a !important; /* 確保主區警示框為深色 */
+        border-left: 5px solid;
+        border-radius: 5px;
+        padding: 10px;
+        margin-bottom: 10px;
+        box-shadow: 0 0 5px rgba(0,229,255,0.3);
+    }
+    
+    /* 🔥 最終 Sidebar 白色背景修正：強制覆蓋 st.success 的背景 */
+    .st-emotion-cache-1d391kg div[data-testid="stAlert"] {
+        background-color: #1a1a1a !important; 
+        border-color: #00e5ff !important; /* 確保邊框亮色 */
+        color: #00e5ff !important; /* 確保文字亮色 */
+    }
+    .st-emotion-cache-1d391kg div[data-testid="stAlert"] > div > div {
+        color: #00e5ff !important; /* 確保 success 框內部的文字顏色 */
+    }
+
+
+    div.stAlert.stAlert--success { border-color: #00e5ff; color: #00e5ff !important; }
+    div.stAlert.stAlert--success > div > div { color: #00e5ff !important; }
+    div.stAlert.stAlert--error { border-color: #ff00ff; color: #ff00ff !important; }
+    div.stAlert.stAlert--error > div > div { color: #ff00ff !important; }
+    div.stAlert.stAlert--info { border-color: #ffff00; color: #ffff00 !important; }
+    div.stAlert.stAlert--info > div > div { color: #ffff00 !important; }
+    
+    /* 評分卡 */
     .score-card {
         background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
         border-radius: 15px; padding: 20px; text-align: center;
-        border: 3px solid; /* 邊框加粗 */
-        box-shadow: 0 0 20px rgba(0,229,255,0.7); /* 陰影更強 */
+        border: 2px solid; 
+        box-shadow: 0 0 15px rgba(0,229,255,0.5); 
     }
     .score-val { 
-        font-size: 64px; /* 字體更大 */
-        font-weight: 900; 
+        font-size: 56px; font-weight: 900; 
         margin: 0; line-height: 1;
     }
-    
-    /* 5. Metric 數據卡片優化 (體積感) */
-    div[data-testid="stMetric"] {
-        background-color: #1a1a1a;
-        border: 1px solid #00e5ff33; 
-        border-radius: 10px;
-        padding: 10px 15px;
-        margin-bottom: 10px;
-        box-shadow: 0 0 5px #00e5ff55; 
+    .score-label { 
+        font-size: 14px; color: #848e9c; letter-spacing: 1px; 
+        text-transform: uppercase; margin-top: 5px;
     }
     
+    /* 報告區塊 */
+    .report-container {
+        background-color: #1a1a1a; 
+        padding: 25px; border-radius: 10px;
+        border-left: 4px solid #ffff00; 
+        margin-top: 20px;
+        box-shadow: 0 0 10px rgba(255,255,0,0.3);
+    }
+    .report-header { 
+        font-size: 18px; font-weight: bold; 
+        color: #ffff00 !important; 
+        margin-bottom: 10px; border-bottom: 1px dashed #ff00ff; 
+        padding-bottom: 5px;
+        text-shadow: 0 0 5px #ffff00;
+    }
+    
+    /* 報告內文 */
+    .report-text { 
+        font-size: 15px; 
+        color: #00e5ff; 
+        line-height: 1.6; margin-bottom: 15px;
+    }
+    /* 讓報告內文中的 **粗體** 更亮 */
+    .report-text strong {
+        color: #ffff00 !important;
+        text-shadow: 0 0 2px #ffff00;
+    }
+
+    /* 交易方向標籤 */
+    .direction-tag {
+        padding: 8px 15px; border-radius: 8px; font-weight: bold;
+        text-align: center; margin-bottom: 15px;
+        color: #1a1a1a;
+        border: 1px solid transparent;
+        box-shadow: 0 0 8px;
+    }
+    .dir-long { background-color: #00e5ff; border-color: #00e5ff; box-shadow: 0 0 8px #00e5ff; color: #1a1a1a; }
+    .dir-short { background-color: #ff00ff; border-color: #ff00ff; box-shadow: 0 0 8px #ff00ff; color: #1a1a1a; }
+    .dir-wait { background-color: #ffff00; border-color: #ffff00; box-shadow: 0 0 8px #ffff00; color: #1a1a1a; }
+
+    /* Streamlit Metric 數據顏色調整 */
     [data-testid="stMetricValue"] {
-        font-size: 1.8rem !important; /* 數據值放大 */
-        color: #ffff00 !important; /* 數據值顏色 */
-        text-shadow: 0 0 6px #ffff00; /* 霓虹黃數據陰影 */
+        font-size: 1.6rem !important;
+        color: #ffff00 !important; 
+        text-shadow: 0 0 5px #ffff00;
+    }
+    /* 交易計畫的 Metric 標籤顏色調整 */
+    [data-testid="stMetricLabel"] > div:nth-child(1) {
+        color: #00e5ff !important; 
+        font-weight: bold;
+    }
+    [data-testid="stMetricLabel"] > div:nth-child(2) {
+        color: #848e9c !important; 
     }
 </style>
 """, unsafe_allow_html=True)
@@ -415,7 +470,7 @@ class AnalystAI:
         return {"error": "AI分析失敗或無法解析關鍵數據"}
 
 # ==========================================
-# 4. UI 介面 (已優化結構)
+# 4. UI 介面
 # ==========================================
 def run_connection_test(api_key):
     tester = AnalystAI(api_key)
@@ -451,7 +506,7 @@ with st.sidebar:
     symbol = f"{symbol_in}USDT" if not symbol_in.endswith("USDT") else symbol_in
     
     st.markdown("### 交易週期")
-    # 這裡只保留一行正確的字典定義
+    # 修正字典語法錯誤和重複定義問題
     tf_map = {"15m": "1h", "1h": "4h", "4h": "1d"} 
     interval = st.selectbox("選擇分析週期", list(tf_map.keys()), index=0)
     htf = tf_map[interval]
