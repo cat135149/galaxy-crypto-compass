@@ -9,28 +9,17 @@ from datetime import datetime
 from scipy.stats import linregress
 
 # ==========================================
-# 🚨 最終修復區塊：處理 google.generativeai 導入的容錯機制
-# 這是為了確保在 Render/Docker 環境中，無論模組路徑如何，程式都能找到 genai
+# 這是確保程式碼可以順利執行，但不會被實際調用的導入，因為我們使用 requests 庫
+# 這是一個空的佔位符，確保 Python 啟動時不報錯
 # ==========================================
-try:
-    # 1. 標準導入方式 (應對成功安裝情況)
-    import google.generativeai as genai
-except (ModuleNotFoundError, ImportError):
-    # 如果標準導入失敗，嘗試替代導入名稱
-    try:
-        # 2. 嘗試使用套件在某些環境中的替代名稱
-        import google_genai as genai
-    except (ModuleNotFoundError, ImportError):
-        # 3. 如果兩者都失敗，我們設定一個 Mock 類別，讓程式碼可以啟動，但報連線失敗
-        class MockGenai:
-            def configure(self, api_key): pass
-            def GenerativeModel(self, model):
-                class MockModel:
-                    def generate_content(self, prompt):
-                        # 當 SDK 導入徹底失敗時，拋出明確的錯誤訊息
-                        raise Exception("Gemini SDK 導入失敗，無法連接 AI 服務。")
-                return MockModel()
-        genai = MockGenai()
+class MockGenai:
+    def configure(self, api_key): pass
+    def GenerativeModel(self, model):
+        class MockModel:
+            def generate_content(self, prompt):
+                raise Exception("Gemini SDK 導入失敗，無法連接 AI 服務。")
+        return MockModel()
+genai = MockGenai()
 
 # ==========================================
 # 0. 頁面設定與初始化
@@ -47,7 +36,7 @@ if 'api_key_input' not in st.session_state:
 if 'last_used_model' not in st.session_state:
     st.session_state.last_used_model = "N/A" # 儲存實際用於生成報告的模型
 
-# --- 賽博龐克風格 CSS 深度美化 ---
+# --- 賽博龐克風格 CSS ---
 st.markdown("""
 <style>
     /* 1. 引入 Google Font (Fira Code - 更具科技感) */
@@ -78,7 +67,7 @@ st.markdown("""
     }
     
     /* Sidebar 標題 */
-    .st-emotion-cache-1d391kg h1 {
+    .css-1d391kg h1 {
         color: #ff00ff !important; 
         text-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff; 
     }
@@ -96,7 +85,7 @@ st.markdown("""
         border-color: #ff00ff; 
         box-shadow: 0 0 8px #ff00ff;
     }
-    
+
     /* 3. 分隔線顏色優化 (更明顯的霓虹效果) */
     .st-emotion-cache-1px212h { /* st.divider 的 Class */
         border-top: 1px dashed #ffff00 !important;
@@ -352,6 +341,7 @@ class AnalystAI:
         qvol_str = f"{struct['qvol']/1000000:.2f}M" if struct['qvol'] > 1000000 else f"{struct['qvol']/1000:.2f}K"
         current_price = tech_curr['close']
         
+        # 報告內文會使用 **粗體** 來強調關鍵數據
         prompt = f"""
         你是一位華爾街操盤手。請為 {symbol} ({interval}) 撰寫交易分析報告。
         
@@ -461,8 +451,8 @@ with st.sidebar:
     symbol = f"{symbol_in}USDT" if not symbol_in.endswith("USDT") else symbol_in
     
     st.markdown("### 交易週期")
-    tf_map = {"15m": "1h", "1h": "4h": "4h": "1d"} # 修正錯誤的字典
-    tf_map = {"15m": "1h", "1h": "4h", "4h": "1d"}
+    # 這裡只保留一行正確的字典定義
+    tf_map = {"15m": "1h", "1h": "4h", "4h": "1d"} 
     interval = st.selectbox("選擇分析週期", list(tf_map.keys()), index=0)
     htf = tf_map[interval]
     
@@ -532,7 +522,7 @@ if analyze_btn and api_key:
             # 輔助數據總覽 (Metric 優化排版)
             st.markdown("---")
             col_data_top = st.columns(4)
-            col_data_bottom = st.columns(5)
+            col_data_bottom = st.columns(5) # 雖然只用一個，但保留 col_data_bottom[0] 讓排版更靈活
             
             vol_str = f"{struct_data['qvol']/1000000:.2f}M" if struct_data['qvol'] > 1000000 else f"{struct_data['qvol']/1000:.2f}K"
             
@@ -561,6 +551,7 @@ if analyze_btn and api_key:
 
             with c_r:
                 st.markdown("<div class='report-header'>🎯 交易計畫 (SETUP)</div>", unsafe_allow_html=True)
+                setup = report.get('setup', {})
                 
                 # 交易方向標籤
                 dir_class = "dir-long" if direction == "LONG" else ("dir-short" if direction == "SHORT" else "dir-wait")
