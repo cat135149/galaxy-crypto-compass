@@ -4,10 +4,31 @@ import numpy as np
 import requests
 import json
 import plotly.graph_objects as go
-import google.generativeai as genai
 import re
 from datetime import datetime
 from scipy.stats import linregress
+
+# ==========================================
+# 🚨 最終修復區塊：處理 google.generativeai 導入的容錯機制
+# Render/Docker 環境的路徑問題，必須使用 try-except 處理
+# ==========================================
+try:
+    import google.generativeai as genai
+except (ModuleNotFoundError, ImportError):
+    # 如果標準導入失敗，嘗試使用 Render/Docker 環境中可能存在的替代名稱
+    # 這是解決 ModuleNotFoundError 的最終策略
+    try:
+        import google_genai as genai
+    except (ModuleNotFoundError, ImportError):
+        # 如果兩者都失敗，我們設定 genai 讓程式碼可以繼續執行，但在 AnalystAI 中會報錯
+        class MockGenai:
+            def configure(self, api_key): pass
+            def GenerativeModel(self, model):
+                class MockModel:
+                    def generate_content(self, prompt):
+                        raise Exception("Gemini SDK 導入失敗，無法連接 AI 服務。")
+                return MockModel()
+        genai = MockGenai()
 
 # ==========================================
 # 0. 頁面設定與初始化
@@ -24,7 +45,7 @@ if 'api_key_input' not in st.session_state:
 if 'last_used_model' not in st.session_state:
     st.session_state.last_used_model = "N/A" # 儲存實際用於生成報告的模型
 
-# --- 賽博龐克風格 CSS ---
+# --- 賽博龐克風格 CSS (保持不變) ---
 st.markdown("""
 <style>
     /* 基礎設置 */
@@ -350,6 +371,10 @@ class AnalystAI:
         self.models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash']
     
     def test_connection(self):
+        # 處理 MockGenai 的情況
+        if genai.__class__.__name__ == 'MockGenai':
+            return False, "Gemini SDK 導入失敗，請檢查 Dockerfile 或 requirements.txt", ""
+
         if not self.key: return False, "未輸入 Key", ""
         genai.configure(api_key=self.key)
         try:
@@ -361,6 +386,10 @@ class AnalystAI:
             return False, str(e), ""
     
     def generate_report(self, symbol, interval, htf, tech_curr, tech_htf, market, fng, l3, log_reg, struct):
+        # 處理 MockGenai 的情況
+        if genai.__class__.__name__ == 'MockGenai':
+            return {"error": "AI分析失敗：Gemini SDK 導入失敗。"}
+
         if not self.key: return {"error": "無 Key"}
         genai.configure(api_key=self.key)
         
@@ -596,7 +625,4 @@ elif not api_key:
     if not st.session_state.gemini_connected:
         st.info("👈 請先輸入 Gemini API Key，然後點擊「連線測試」按鈕。")
 elif analyze_btn and not api_key:
-
      st.error("請輸入 Gemini API Key 後再進行分析！")
-
-
