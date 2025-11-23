@@ -1,8 +1,8 @@
+# GALAXY | 區塊鏈羅盤分析 v3.2 最終依賴列表
 streamlit
 pandas
 numpy
 requests
 plotly
-google-genai
 scipy
-
+google-genai
