@@ -13,7 +13,7 @@ from scipy.stats import linregress
 # ==========================================
 st.set_page_config(page_title="GALAXY | 區塊鏈羅盤分析 v3.2", layout="wide", page_icon="🧭")
 
-# 初始化 Session State (保持狀態)
+# 初始化 Session State 來儲存連線狀態和 API Key 輸入
 if 'gemini_connected' not in st.session_state:
     st.session_state.gemini_connected = False
 if 'gemini_message' not in st.session_state:
@@ -21,59 +21,52 @@ if 'gemini_message' not in st.session_state:
 if 'api_key_input' not in st.session_state:
     st.session_state.api_key_input = ""
 if 'last_used_model' not in st.session_state:
-    st.session_state.last_used_model = "N/A"
+    st.session_state.last_used_model = "N/A" # 儲存實際用於生成報告的模型
 
-# --- 賽博龐克風格 CSS (最終修正 Sidebar 白色背景 + 倉庫內背景圖) ---
+# --- 賽博龐克風格 CSS ---
 st.markdown("""
 <style>
-    /* 基礎設置 (整個 App Body) */
+    /* 基礎設置 */
     .stApp {
-        background-image: url('static/GGEE.jpg'); /* 🚀 使用倉庫中的圖片 */
-        background-size: cover;
-        background-attachment: fixed; /* 讓圖片不隨頁面滾動 */
-        background-color: #0d0d0d;
-        color: #00e5ff;
-        font-family: 'Roboto Mono', monospace;
+        background-color: #0d0d0d; /* 更深的黑色背景 */
+        color: #00e5ff; /* 賽博龐克亮藍色作為默認文字色 */
+        font-family: 'Roboto Mono', monospace; /* 科技感字體 */
     }
 
-    /* Sidebar 容器和背景色 */
-    /* st-emotion-cache-1d391kg 是 Streamlit Sidebar 的主要容器 class */
-    .st-emotion-cache-1d391kg { 
-        background-image: url('static/GGEE.jpg'); /* 🚀 Sidebar 也使用背景圖 */
-        background-size: cover;
-        background-attachment: fixed; 
-        background-position: left; /* 讓 Sidebar 的圖從左邊開始顯示 */
+    /* Sidebar 背景色 */
+    .st-emotion-cache-1d391kg { /* 這是 Streamlit Sidebar 的容器 Class */
+        background-color: #0d0d0d !important; /* 確保 Sidebar 背景色與 App 背景一致 */
     }
-    
+
     /* 全局文本顏色覆蓋 */
     h1, h2, h3, h4, h5, h6, label, .stMarkdown, .stButton>button {
-        color: #00e5ff !important; 
+        color: #00e5ff !important; /* 強制標題和主要文字為亮藍 */
     }
     
     /* Sidebar 標題 */
     .css-1d391kg h1 {
-        color: #ff00ff !important; 
-        text-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff; 
+        color: #ff00ff !important; /* Sidebar 標題改為亮粉色 */
+        text-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff; /* 霓虹效果 */
     }
 
     /* Streamlit 原生輸入框 (Text Input, Selectbox) */
     .stTextInput>div>div>input, .stSelectbox>div>div>div {
-        background-color: #1a1a1a; 
-        color: #00e5ff; 
-        border: 1px solid #00e5ff; 
+        background-color: #1a1a1a; 
+        color: #00e5ff; 
+        border: 1px solid #00e5ff; 
         border-radius: 5px;
-        box-shadow: 0 0 5px #00e5ff55; 
+        box-shadow: 0 0 5px #00e5ff55; 
     }
     .stTextInput>div>div>input:focus, .stSelectbox>div>div>div:focus {
-        border-color: #ff00ff; 
+        border-color: #ff00ff; 
         box-shadow: 0 0 8px #ff00ff;
     }
 
     /* 按鈕樣式 (通用) */
     .stButton>button {
         background-color: #1a1a1a;
-        color: #00e5ff !important; 
-        border: 1px solid #00e5ff; 
+        color: #00e5ff !important; 
+        border: 1px solid #00e5ff; 
         border-radius: 8px;
         padding: 10px 20px;
         font-weight: bold;
@@ -81,7 +74,7 @@ st.markdown("""
         transition: all 0.2s ease-in-out;
     }
     .stButton>button:hover {
-        background-color: #00e5ff; 
+        background-color: #00e5ff; 
         color: #1a1a1a !important;
         border-color: #ff00ff;
         box-shadow: 0 0 10px #ff00ff;
@@ -89,27 +82,28 @@ st.markdown("""
 
     /* 主要分析按鈕 */
     .stButton[data-testid*="stFormSubmitButton"]>button, .stButton>button[data-testid*="primary"] {
-        background-color: #ff00ff; 
+        background-color: #ff00ff; 
         color: #1a1a1a !important;
         border: 1px solid #ff00ff;
         box-shadow: 0 0 8px #ff00ff;
     }
     .stButton[data-testid*="stFormSubmitButton"]>button:hover, .stButton>button[data-testid*="primary"]:hover {
-        background-color: #00e5ff; 
+        background-color: #00e5ff; 
         color: #1a1a1a !important;
         border-color: #00e5ff;
         box-shadow: 0 0 12px #00e5ff;
     }
 
-    /* 輔助資訊 (st.caption) 優化) */
+    /* 輔助資訊 (st.caption) 優化 */
     .stText .stCaption {
-        color: #ff00ff !important; 
+        color: #ff00ff !important; 
         font-size: 0.8rem;
     }
 
     /* 警告、成功、資訊訊息 (st.info, st.success, st.error) */
     div.stAlert {
-        background-color: #1a1a1a !important;
+        /* 主內容區的警示框背景 */
+        background-color: #1a1a1a !important; 
         border-left: 5px solid;
         border-radius: 5px;
         padding: 10px;
@@ -117,14 +111,9 @@ st.markdown("""
         box-shadow: 0 0 5px rgba(0,229,255,0.3);
     }
     
-    /* 🔥 最終 Sidebar 白色背景修正：強制覆蓋 st.success 的背景 */
-    .st-emotion-cache-1d391kg div[data-testid="stAlert"] {
+    /* 🔥 Sidebar 內的警示框背景修正 */
+    .st-emotion-cache-1d391kg div.stAlert {
         background-color: #1a1a1a !important; 
-        border-color: #00e5ff !important;
-        color: #00e5ff !important;
-    }
-    .st-emotion-cache-1d391kg div[data-testid="stAlert"] > div > div {
-        color: #00e5ff !important;
     }
 
     div.stAlert.stAlert--success { border-color: #00e5ff; color: #00e5ff !important; }
@@ -152,7 +141,7 @@ st.markdown("""
     
     /* 報告區塊 */
     .report-container {
-        background-color: rgba(26, 26, 26, 0.85); /* 15% 透明度，讓背景圖透出 */
+        background-color: #1a1a1a; 
         padding: 25px; border-radius: 10px;
         border-left: 4px solid #ffff00; 
         margin-top: 20px;
@@ -190,18 +179,19 @@ st.markdown("""
     .dir-short { background-color: #ff00ff; border-color: #ff00ff; box-shadow: 0 0 8px #ff00ff; color: #1a1a1a; }
     .dir-wait { background-color: #ffff00; border-color: #ffff00; box-shadow: 0 0 8px #ffff00; color: #1a1a1a; }
 
-    /* Streamlit Metric 數據調整 */
+    /* Streamlit Metric 數據顏色調整 */
     [data-testid="stMetricValue"] {
         font-size: 1.6rem !important;
-        color: #ffff00 !important; 
+        color: #ffff00 !important; 
         text-shadow: 0 0 5px #ffff00;
     }
+    /* 交易計畫的 Metric 標籤顏色調整 */
     [data-testid="stMetricLabel"] > div:nth-child(1) {
-        color: #00e5ff !important; 
+        color: #00e5ff !important; 
         font-weight: bold;
     }
     [data-testid="stMetricLabel"] > div:nth-child(2) {
-        color: #848e9c !important; 
+        color: #848e9c !important; 
     }
 </style>
 """, unsafe_allow_html=True)
@@ -351,6 +341,7 @@ class MarketEngine:
 
 # ==========================================
 # 3. AI 分析師 (使用 Requests 庫直接調用 API)
+#    此版本完全移除 google.generativeai 依賴
 # ==========================================
 class AnalystAI:
     def __init__(self, key): 
@@ -364,6 +355,7 @@ class AnalystAI:
         
         # 使用 requests 庫測試連線到 Gemini API
         test_model = 'gemini-2.5-flash' 
+        # 將 API Key 直接作為 URL 參數傳遞
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{test_model}:generateContent?key={self.key}"
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
@@ -371,12 +363,15 @@ class AnalystAI:
         try:
             res = requests.post(url, headers=headers, json=payload, timeout=8)
             
+            # 檢查 HTTP 狀態碼和回應內容
             if res.status_code == 200 and 'candidates' in res.json():
                 return True, "連線成功", test_model
             else:
+                # API 驗證失敗或 Key 無效
                 error_msg = res.json().get('error', {}).get('message', 'API 連接/驗證錯誤。')
                 return False, f"API 驗證失敗：{error_msg}", ''
         except Exception as e:
+            # 網絡錯誤
             return False, f"網絡連線錯誤: {str(e)}", ""
 
     def generate_report(self, symbol, interval, htf, tech_curr, tech_htf, market, fng, l3, log_reg, struct):
@@ -419,8 +414,9 @@ class AnalystAI:
         ANALYSIS_END
         """
         
-        # 執行模型降級 (API 降級調用)
+        # 執行模型降級 (現在改為 API 降級調用)
         for m in self.models:
+            # 使用 Requests 庫發送請求
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={self.key}"
             headers = {"Content-Type": "application/json"}
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -429,10 +425,13 @@ class AnalystAI:
                 res = requests.post(url, headers=headers, json=payload, timeout=30)
                 
                 if res.status_code == 200:
+                    # 成功獲取結果
                     json_data = res.json()
+                    # 確保 response 結構正確，避免 KeyError
                     if 'candidates' in json_data and len(json_data['candidates']) > 0 and 'parts' in json_data['candidates'][0]['content']:
                         text = json_data['candidates'][0]['content']['parts'][0]['text']
                     else:
+                        # 如果 API 返回成功但內容為空，跳過當前模型
                         continue 
                     
                     # 執行結果解析 (保持不變)
@@ -455,8 +454,10 @@ class AnalystAI:
                     }
                     return report_data
                 else:
+                    # 如果 HTTP 狀態碼不是 200，嘗試下一個模型
                     continue
             except Exception as e:
+                # 網絡或解析錯誤，嘗試下一個模型
                 continue
         return {"error": "AI分析失敗或無法解析關鍵數據"}
 
@@ -629,3 +630,4 @@ elif not api_key:
         st.info("👈 請先輸入 Gemini API Key，然後點擊「連線測試」按鈕。")
 elif analyze_btn and not api_key:
     st.error("請輸入 Gemini API Key 後再進行分析！")
+
