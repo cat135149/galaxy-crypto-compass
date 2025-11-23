@@ -3,5 +3,6 @@ pandas
 numpy
 requests
 plotly
-google-genai==0.1.0  # 鎖定到舊版本以避開模組路徑問題
+google-genai
 scipy
+
