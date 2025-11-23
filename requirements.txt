@@ -1,8 +1,7 @@
-# GALAXY | 區塊鏈羅盤分析 v3.2 最終依賴列表
+# GALAXY | 區塊鏈羅盤分析 v3.2 最終依賴列表 (已移除不必要的 google-genai)
 streamlit
 pandas
 numpy
 requests
 plotly
 scipy
-google-genai
