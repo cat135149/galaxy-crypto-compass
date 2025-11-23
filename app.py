@@ -9,30 +9,6 @@ from datetime import datetime
 from scipy.stats import linregress
 
 # ==========================================
-# 🚨 最終修復區塊：處理 google.generativeai 導入的容錯機制
-# 這是為了確保在 Render/Docker 環境中，無論模組路徑如何，程式都能找到 genai
-# ==========================================
-try:
-    # 標準導入方式 (應對成功安裝情況)
-    import google.generativeai as genai
-except (ModuleNotFoundError, ImportError):
-    # 如果標準導入失敗，這是解決 Render/Docker 環境的模組名稱路徑錯誤的最終策略
-    try:
-        # 嘗試使用套件在某些環境中的替代名稱
-        import google_genai as genai
-    except (ModuleNotFoundError, ImportError):
-        # 如果兩者都失敗，我們設定一個 Mock 類別，讓程式碼可以繼續執行，但會報連線失敗
-        class MockGenai:
-            def configure(self, api_key): pass
-            def GenerativeModel(self, model):
-                class MockModel:
-                    def generate_content(self, prompt):
-                        # 當 SDK 導入徹底失敗時，拋出明確的錯誤訊息
-                        raise Exception("Gemini SDK 導入失敗，無法連接 AI 服務。")
-                return MockModel()
-        genai = MockGenai()
-
-# ==========================================
 # 0. 頁面設定與初始化
 # ==========================================
 st.set_page_config(page_title="GALAXY | 區塊鏈羅盤分析 v3.2", layout="wide", page_icon="🧭")
@@ -364,37 +340,45 @@ class MarketEngine:
         }
 
 # ==========================================
-# 3. AI 分析師
+# 3. AI 分析師 (使用 Requests 庫直接調用 API)
+#    此版本完全移除 google.generativeai 依賴
 # ==========================================
 class AnalystAI:
     def __init__(self, key): 
         self.key = key
-        # 降級順序：Pro -> Flash -> Flash 2.0
+        # 降級順序：Pro -> Flash -> Flash 2.0 (將在 API 調用中使用)
         self.models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash']
     
     def test_connection(self):
-        # 處理 MockGenai 的情況（如果導入完全失敗）
-        if genai.__class__.__name__ == 'MockGenai':
-            return False, "Gemini SDK 導入失敗，請檢查 Dockerfile 或 requirements.txt", ""
-
-        if not self.key: return False, "未輸入 Key", ""
-        genai.configure(api_key=self.key)
-        try:
-            test_model = 'gemini-2.5-pro'
-            m = genai.GenerativeModel(test_model)
-            m.generate_content("Hi")
-            return True, "連線成功", test_model
-        except Exception as e: 
-            return False, str(e), ""
-    
-    def generate_report(self, symbol, interval, htf, tech_curr, tech_htf, market, fng, l3, log_reg, struct):
-        # 處理 MockGenai 的情況
-        if genai.__class__.__name__ == 'MockGenai':
-            return {"error": "AI分析失敗：Gemini SDK 導入失敗。"}
-
-        if not self.key: return {"error": "無 Key"}
-        genai.configure(api_key=self.key)
+        if not self.key: 
+            return False, "未輸入 Key", ""
         
+        # 使用 requests 庫測試連線到 Gemini API
+        test_model = 'gemini-2.5-flash' 
+        # 將 API Key 直接作為 URL 參數傳遞
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{test_model}:generateContent?key={self.key}"
+        headers = {"Content-Type": "application/json"}
+        payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
+        
+        try:
+            res = requests.post(url, headers=headers, json=payload, timeout=8)
+            
+            # 檢查 HTTP 狀態碼和回應內容
+            if res.status_code == 200 and 'candidates' in res.json():
+                return True, "連線成功", test_model
+            else:
+                # API 驗證失敗或 Key 無效
+                error_msg = res.json().get('error', {}).get('message', 'API 連接/驗證錯誤。')
+                return False, f"API 驗證失敗：{error_msg}", ''
+        except Exception as e:
+            # 網絡錯誤
+            return False, f"網絡連線錯誤: {str(e)}", ""
+
+    def generate_report(self, symbol, interval, htf, tech_curr, tech_htf, market, fng, l3, log_reg, struct):
+        if not self.key: 
+            return {"error": "無 Key"}
+        
+        # --- 原始數據準備 ---
         qvol_str = f"{struct['qvol']/1000000:.2f}M" if struct['qvol'] > 1000000 else f"{struct['qvol']/1000:.2f}K"
         current_price = tech_curr['close']
         
@@ -430,32 +414,50 @@ class AnalystAI:
         ANALYSIS_END
         """
         
-        # 執行模型降級
+        # 執行模型降級 (現在改為 API 降級調用)
         for m in self.models:
+            # 使用 Requests 庫發送請求
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={self.key}"
+            headers = {"Content-Type": "application/json"}
+            payload = {"contents": [{"parts": [{"text": prompt}]}]}
+            
             try:
-                res = genai.GenerativeModel(m).generate_content(prompt)
+                res = requests.post(url, headers=headers, json=payload, timeout=30)
                 
-                text = res.text
-                
-                score_match = re.search(r'SCORE:\s*([\d\.]+)', text, re.IGNORECASE)
-                dir_match = re.search(r'DIRECTION:\s*(LONG|SHORT|WAIT)', text, re.IGNORECASE)
-                entry_match = re.search(r'ENTRY:\s*([\d\.]+)', text, re.IGNORECASE)
-                sl_match = re.search(r'SL:\s*([\d\.]+)', text, re.IGNORECASE)
-                tp_match = re.search(r'TP:\s*([\d\.]+)', text, re.IGNORECASE)
-                
-                report_data = {
-                    "score": int(float(score_match.group(1))) if score_match else 0,
-                    "direction": dir_match.group(1).upper() if dir_match else "WAIT",
-                    "summary_report": text, 
-                    "setup": {
-                        "entry": float(entry_match.group(1)) if entry_match else "N/A",
-                        "sl": float(sl_match.group(1)) if sl_match else "N/A",
-                        "tp": float(tp_match.group(1)) if tp_match else "N/A",
-                    },
-                    "used_model": m # 記錄實際用於生成報告的模型
-                }
-                return report_data
+                if res.status_code == 200:
+                    # 成功獲取結果
+                    json_data = res.json()
+                    # 確保 response 結構正確，避免 KeyError
+                    if 'candidates' in json_data and len(json_data['candidates']) > 0 and 'parts' in json_data['candidates'][0]['content']:
+                        text = json_data['candidates'][0]['content']['parts'][0]['text']
+                    else:
+                        # 如果 API 返回成功但內容為空，跳過當前模型
+                        continue 
+                    
+                    # 執行結果解析 (保持不變)
+                    score_match = re.search(r'SCORE:\s*([\d\.]+)', text, re.IGNORECASE)
+                    dir_match = re.search(r'DIRECTION:\s*(LONG|SHORT|WAIT)', text, re.IGNORECASE)
+                    entry_match = re.search(r'ENTRY:\s*([\d\.]+)', text, re.IGNORECASE)
+                    sl_match = re.search(r'SL:\s*([\d\.]+)', text, re.IGNORECASE)
+                    tp_match = re.search(r'TP:\s*([\d\.]+)', text, re.IGNORECASE)
+                    
+                    report_data = {
+                        "score": int(float(score_match.group(1))) if score_match else 0,
+                        "direction": dir_match.group(1).upper() if dir_match else "WAIT",
+                        "summary_report": text, 
+                        "setup": {
+                            "entry": float(entry_match.group(1)) if entry_match else "N/A",
+                            "sl": float(sl_match.group(1)) if sl_match else "N/A",
+                            "tp": float(tp_match.group(1)) if tp_match else "N/A",
+                        },
+                        "used_model": m
+                    }
+                    return report_data
+                else:
+                    # 如果 HTTP 狀態碼不是 200，嘗試下一個模型
+                    continue
             except Exception as e:
+                # 網絡或解析錯誤，嘗試下一個模型
                 continue
         return {"error": "AI分析失敗或無法解析關鍵數據"}
 
