@@ -9,6 +9,30 @@ from datetime import datetime
 from scipy.stats import linregress
 
 # ==========================================
+# 🚨 最終修復區塊：處理 google.generativeai 導入的容錯機制
+# 這是為了確保在 Render/Docker 環境中，無論模組路徑如何，程式都能找到 genai
+# ==========================================
+try:
+    # 1. 標準導入方式 (應對成功安裝情況)
+    import google.generativeai as genai
+except (ModuleNotFoundError, ImportError):
+    # 如果標準導入失敗，嘗試替代導入名稱
+    try:
+        # 2. 嘗試使用套件在某些環境中的替代名稱
+        import google_genai as genai
+    except (ModuleNotFoundError, ImportError):
+        # 3. 如果兩者都失敗，我們設定一個 Mock 類別，讓程式碼可以啟動，但報連線失敗
+        class MockGenai:
+            def configure(self, api_key): pass
+            def GenerativeModel(self, model):
+                class MockModel:
+                    def generate_content(self, prompt):
+                        # 當 SDK 導入徹底失敗時，拋出明確的錯誤訊息
+                        raise Exception("Gemini SDK 導入失敗，無法連接 AI 服務。")
+                return MockModel()
+        genai = MockGenai()
+
+# ==========================================
 # 0. 頁面設定與初始化
 # ==========================================
 st.set_page_config(page_title="GALAXY | 區塊鏈羅盤分析 v3.2", layout="wide", page_icon="🧭")
@@ -23,30 +47,40 @@ if 'api_key_input' not in st.session_state:
 if 'last_used_model' not in st.session_state:
     st.session_state.last_used_model = "N/A" # 儲存實際用於生成報告的模型
 
-# --- 賽博龐克風格 CSS ---
+# --- 賽博龐克風格 CSS 深度美化 ---
 st.markdown("""
 <style>
+    /* 1. 引入 Google Font (Fira Code - 更具科技感) */
+    @import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;500;700&display=swap');
+
     /* 基礎設置 */
     .stApp {
-        background-color: #0d0d0d; /* 更深的黑色背景 */
-        color: #00e5ff; /* 賽博龐克亮藍色作為默認文字色 */
-        font-family: 'Roboto Mono', monospace; /* 科技感字體 */
+        background-color: #0d0d0d; 
+        color: #00e5ff; 
+        font-family: 'Fira Code', monospace; /* 🚀 全局字體替換 */
     }
 
-    /* Sidebar 背景色 */
-    .st-emotion-cache-1d391kg { /* 這是 Streamlit Sidebar 的容器 Class */
-        background-color: #0d0d0d !important; /* 確保 Sidebar 背景色與 App 背景一致 */
+    /* 2. 深度定制 Sidebar */
+    .st-emotion-cache-1d391kg { /* Sidebar 容器 Class */
+        background-color: #0d0d0d !important; 
+        border-right: 2px solid #ff00ff; /* 霓虹粉色邊框 */
+        box-shadow: 2px 0 10px #ff00ff55; /* 霓虹陰影 */
+    }
+    
+    /* Sidebar 內部容器顏色修正 */
+    .st-emotion-cache-r69vge { /* Sidebar 內部內容區塊 */
+        background-color: #0d0d0d !important;
     }
 
     /* 全局文本顏色覆蓋 */
     h1, h2, h3, h4, h5, h6, label, .stMarkdown, .stButton>button {
-        color: #00e5ff !important; /* 強制標題和主要文字為亮藍 */
+        color: #00e5ff !important; 
     }
     
     /* Sidebar 標題 */
-    .css-1d391kg h1 {
-        color: #ff00ff !important; /* Sidebar 標題改為亮粉色 */
-        text-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff; /* 霓虹效果 */
+    .st-emotion-cache-1d391kg h1 {
+        color: #ff00ff !important; 
+        text-shadow: 0 0 5px #ff00ff, 0 0 10px #ff00ff; 
     }
 
     /* Streamlit 原生輸入框 (Text Input, Selectbox) */
@@ -56,10 +90,16 @@ st.markdown("""
         border: 1px solid #00e5ff; 
         border-radius: 5px;
         box-shadow: 0 0 5px #00e5ff55; 
+        font-family: 'Fira Code', monospace;
     }
     .stTextInput>div>div>input:focus, .stSelectbox>div>div>div:focus {
         border-color: #ff00ff; 
         box-shadow: 0 0 8px #ff00ff;
+    }
+    
+    /* 3. 分隔線顏色優化 (更明顯的霓虹效果) */
+    .st-emotion-cache-1px212h { /* st.divider 的 Class */
+        border-top: 1px dashed #ffff00 !important;
     }
 
     /* 按鈕樣式 (通用) */
@@ -68,8 +108,7 @@ st.markdown("""
         color: #00e5ff !important; 
         border: 1px solid #00e5ff; 
         border-radius: 8px;
-        padding: 10px 20px;
-        font-weight: bold;
+        font-weight: 500; /* 中等粗細，更優雅 */
         box-shadow: 0 0 5px #00e5ff88;
         transition: all 0.2s ease-in-out;
     }
@@ -85,113 +124,49 @@ st.markdown("""
         background-color: #ff00ff; 
         color: #1a1a1a !important;
         border: 1px solid #ff00ff;
-        box-shadow: 0 0 8px #ff00ff;
+        box-shadow: 0 0 15px #ff00ff; /* 更強烈的陰影 */
+        font-weight: 700; /* 加粗 */
     }
     .stButton[data-testid*="stFormSubmitButton"]>button:hover, .stButton>button[data-testid*="primary"]:hover {
         background-color: #00e5ff; 
         color: #1a1a1a !important;
         border-color: #00e5ff;
-        box-shadow: 0 0 12px #00e5ff;
+        box-shadow: 0 0 20px #00e5ff;
     }
 
     /* 輔助資訊 (st.caption) 優化 */
     .stText .stCaption {
-        color: #ff00ff !important; 
-        font-size: 0.8rem;
+        color: #ffff00 !important; /* 改為霓虹黃 */
+        font-size: 0.75rem; /* 稍微縮小 */
     }
 
-    /* 警告、成功、資訊訊息 (st.info, st.success, st.error) */
-    div.stAlert {
-        /* 主內容區的警示框背景 */
-        background-color: #1a1a1a !important; 
-        border-left: 5px solid;
-        border-radius: 5px;
-        padding: 10px;
-        margin-bottom: 10px;
-        box-shadow: 0 0 5px rgba(0,229,255,0.3);
-    }
-    
-    /* 🔥 Sidebar 內的警示框背景修正 */
-    .st-emotion-cache-1d391kg div.stAlert {
-        background-color: #1a1a1a !important; 
-    }
-
-    div.stAlert.stAlert--success { border-color: #00e5ff; color: #00e5ff !important; }
-    div.stAlert.stAlert--success > div > div { color: #00e5ff !important; }
-    div.stAlert.stAlert--error { border-color: #ff00ff; color: #ff00ff !important; }
-    div.stAlert.stAlert--error > div > div { color: #ff00ff !important; }
-    div.stAlert.stAlert--info { border-color: #ffff00; color: #ffff00 !important; }
-    div.stAlert.stAlert--info > div > div { color: #ffff00 !important; }
-    
-    /* 評分卡 */
+    /* 4. 評分卡 (Score Card) 邊框與陰影優化 */
     .score-card {
         background: linear-gradient(135deg, #1a1a1a 0%, #2a2a2a 100%);
         border-radius: 15px; padding: 20px; text-align: center;
-        border: 2px solid; 
-        box-shadow: 0 0 15px rgba(0,229,255,0.5); 
+        border: 3px solid; /* 邊框加粗 */
+        box-shadow: 0 0 20px rgba(0,229,255,0.7); /* 陰影更強 */
     }
     .score-val { 
-        font-size: 56px; font-weight: 900; 
+        font-size: 64px; /* 字體更大 */
+        font-weight: 900; 
         margin: 0; line-height: 1;
     }
-    .score-label { 
-        font-size: 14px; color: #848e9c; letter-spacing: 1px; 
-        text-transform: uppercase; margin-top: 5px;
+    
+    /* 5. Metric 數據卡片優化 (體積感) */
+    div[data-testid="stMetric"] {
+        background-color: #1a1a1a;
+        border: 1px solid #00e5ff33; 
+        border-radius: 10px;
+        padding: 10px 15px;
+        margin-bottom: 10px;
+        box-shadow: 0 0 5px #00e5ff55; 
     }
     
-    /* 報告區塊 */
-    .report-container {
-        background-color: #1a1a1a; 
-        padding: 25px; border-radius: 10px;
-        border-left: 4px solid #ffff00; 
-        margin-top: 20px;
-        box-shadow: 0 0 10px rgba(255,255,0,0.3);
-    }
-    .report-header { 
-        font-size: 18px; font-weight: bold; 
-        color: #ffff00 !important; 
-        margin-bottom: 10px; border-bottom: 1px dashed #ff00ff; 
-        padding-bottom: 5px;
-        text-shadow: 0 0 5px #ffff00;
-    }
-    
-    /* 報告內文 */
-    .report-text { 
-        font-size: 15px; 
-        color: #00e5ff; 
-        line-height: 1.6; margin-bottom: 15px;
-    }
-    /* 讓報告內文中的 **粗體** 更亮 */
-    .report-text strong {
-        color: #ffff00 !important;
-        text-shadow: 0 0 2px #ffff00;
-    }
-
-    /* 交易方向標籤 */
-    .direction-tag {
-        padding: 8px 15px; border-radius: 8px; font-weight: bold;
-        text-align: center; margin-bottom: 15px;
-        color: #1a1a1a;
-        border: 1px solid transparent;
-        box-shadow: 0 0 8px;
-    }
-    .dir-long { background-color: #00e5ff; border-color: #00e5ff; box-shadow: 0 0 8px #00e5ff; color: #1a1a1a; }
-    .dir-short { background-color: #ff00ff; border-color: #ff00ff; box-shadow: 0 0 8px #ff00ff; color: #1a1a1a; }
-    .dir-wait { background-color: #ffff00; border-color: #ffff00; box-shadow: 0 0 8px #ffff00; color: #1a1a1a; }
-
-    /* Streamlit Metric 數據顏色調整 */
     [data-testid="stMetricValue"] {
-        font-size: 1.6rem !important;
-        color: #ffff00 !important; 
-        text-shadow: 0 0 5px #ffff00;
-    }
-    /* 交易計畫的 Metric 標籤顏色調整 */
-    [data-testid="stMetricLabel"] > div:nth-child(1) {
-        color: #00e5ff !important; 
-        font-weight: bold;
-    }
-    [data-testid="stMetricLabel"] > div:nth-child(2) {
-        color: #848e9c !important; 
+        font-size: 1.8rem !important; /* 數據值放大 */
+        color: #ffff00 !important; /* 數據值顏色 */
+        text-shadow: 0 0 6px #ffff00; /* 霓虹黃數據陰影 */
     }
 </style>
 """, unsafe_allow_html=True)
@@ -341,7 +316,6 @@ class MarketEngine:
 
 # ==========================================
 # 3. AI 分析師 (使用 Requests 庫直接調用 API)
-#    此版本完全移除 google.generativeai 依賴
 # ==========================================
 class AnalystAI:
     def __init__(self, key): 
@@ -355,7 +329,6 @@ class AnalystAI:
         
         # 使用 requests 庫測試連線到 Gemini API
         test_model = 'gemini-2.5-flash' 
-        # 將 API Key 直接作為 URL 參數傳遞
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{test_model}:generateContent?key={self.key}"
         headers = {"Content-Type": "application/json"}
         payload = {"contents": [{"parts": [{"text": "Hello"}]}]}
@@ -363,15 +336,12 @@ class AnalystAI:
         try:
             res = requests.post(url, headers=headers, json=payload, timeout=8)
             
-            # 檢查 HTTP 狀態碼和回應內容
             if res.status_code == 200 and 'candidates' in res.json():
                 return True, "連線成功", test_model
             else:
-                # API 驗證失敗或 Key 無效
                 error_msg = res.json().get('error', {}).get('message', 'API 連接/驗證錯誤。')
                 return False, f"API 驗證失敗：{error_msg}", ''
         except Exception as e:
-            # 網絡錯誤
             return False, f"網絡連線錯誤: {str(e)}", ""
 
     def generate_report(self, symbol, interval, htf, tech_curr, tech_htf, market, fng, l3, log_reg, struct):
@@ -382,7 +352,6 @@ class AnalystAI:
         qvol_str = f"{struct['qvol']/1000000:.2f}M" if struct['qvol'] > 1000000 else f"{struct['qvol']/1000:.2f}K"
         current_price = tech_curr['close']
         
-        # 報告內文會使用 **粗體** 來強調關鍵數據
         prompt = f"""
         你是一位華爾街操盤手。請為 {symbol} ({interval}) 撰寫交易分析報告。
         
@@ -414,9 +383,8 @@ class AnalystAI:
         ANALYSIS_END
         """
         
-        # 執行模型降級 (現在改為 API 降級調用)
+        # 執行模型降級 (API 降級調用)
         for m in self.models:
-            # 使用 Requests 庫發送請求
             url = f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent?key={self.key}"
             headers = {"Content-Type": "application/json"}
             payload = {"contents": [{"parts": [{"text": prompt}]}]}
@@ -425,13 +393,10 @@ class AnalystAI:
                 res = requests.post(url, headers=headers, json=payload, timeout=30)
                 
                 if res.status_code == 200:
-                    # 成功獲取結果
                     json_data = res.json()
-                    # 確保 response 結構正確，避免 KeyError
                     if 'candidates' in json_data and len(json_data['candidates']) > 0 and 'parts' in json_data['candidates'][0]['content']:
                         text = json_data['candidates'][0]['content']['parts'][0]['text']
                     else:
-                        # 如果 API 返回成功但內容為空，跳過當前模型
                         continue 
                     
                     # 執行結果解析 (保持不變)
@@ -454,15 +419,13 @@ class AnalystAI:
                     }
                     return report_data
                 else:
-                    # 如果 HTTP 狀態碼不是 200，嘗試下一個模型
                     continue
             except Exception as e:
-                # 網絡或解析錯誤，嘗試下一個模型
                 continue
         return {"error": "AI分析失敗或無法解析關鍵數據"}
 
 # ==========================================
-# 4. UI 介面
+# 4. UI 介面 (已優化結構)
 # ==========================================
 def run_connection_test(api_key):
     tester = AnalystAI(api_key)
@@ -498,6 +461,7 @@ with st.sidebar:
     symbol = f"{symbol_in}USDT" if not symbol_in.endswith("USDT") else symbol_in
     
     st.markdown("### 交易週期")
+    tf_map = {"15m": "1h", "1h": "4h": "4h": "1d"} # 修正錯誤的字典
     tf_map = {"15m": "1h", "1h": "4h", "4h": "1d"}
     interval = st.selectbox("選擇分析週期", list(tf_map.keys()), index=0)
     htf = tf_map[interval]
@@ -565,17 +529,18 @@ if analyze_btn and api_key:
             
             with c2: st.markdown(f"## {symbol} 深度分析報告", unsafe_allow_html=True); st.subheader(f"週期: {interval} | 當前價格: {curr_price:.4f}")
             
-            # 輔助數據總覽
+            # 輔助數據總覽 (Metric 優化排版)
             st.markdown("---")
-            col_data = st.columns(5)
+            col_data_top = st.columns(4)
+            col_data_bottom = st.columns(5)
             
             vol_str = f"{struct_data['qvol']/1000000:.2f}M" if struct_data['qvol'] > 1000000 else f"{struct_data['qvol']/1000:.2f}K"
             
-            col_data[0].metric("成交額 (資金量)", f"${vol_str}", help="當前週期的 USDT 成交總額")
-            col_data[1].metric("資金費率", f"{market.get('fr', 0)*100:.4f}%")
-            col_data[2].metric("買賣比", f"{market.get('depth', 1):.2f}", help="深度圖 Bid/Ask 交易量比")
-            col_data[3].metric("恐慌指數", f"{fng}")
-            col_data[4].metric("L3資金流狀態", f"{l3_res['status']}")
+            col_data_top[0].metric("成交額 (資金量)", f"${vol_str}", help="當前週期的 USDT 成交總額")
+            col_data_top[1].metric("資金費率", f"{market.get('fr', 0)*100:.4f}%")
+            col_data_top[2].metric("買賣比", f"{market.get('depth', 1):.2f}", help="深度圖 Bid/Ask 交易量比")
+            col_data_top[3].metric("恐慌指數", f"{fng}")
+            col_data_bottom[0].metric("L3資金流狀態", f"{l3_res['status']}")
             
             # 詳細報告區 
             c_l, c_r = st.columns([2, 1])
@@ -587,43 +552,46 @@ if analyze_btn and api_key:
                 content_match = re.search(r'ANALYSIS_START\s*(.*?)\s*ANALYSIS_END', raw_text, re.DOTALL | re.IGNORECASE)
                 if content_match:
                     analysis_content = content_match.group(1).strip()
-                    st.markdown(f"<span class='report-text'>{analysis_content}</span>", unsafe_allow_html=True)
+                    # 渲染 Markdown 標題，並保留您的 report-text div
+                    st.markdown(f"<div class='report-text'>{analysis_content}</div>", unsafe_allow_html=True)
                 else:
-                    st.markdown(f"<span class='report-text'>{raw_text}</span>", unsafe_allow_html=True)
+                    st.markdown(f"<div class='report-text'>{raw_text}</div>", unsafe_allow_html=True)
                 
                 st.markdown("</div>", unsafe_allow_html=True)
 
             with c_r:
                 st.markdown("<div class='report-header'>🎯 交易計畫 (SETUP)</div>", unsafe_allow_html=True)
-                setup = report.get('setup', {})
                 
                 # 交易方向標籤
                 dir_class = "dir-long" if direction == "LONG" else ("dir-short" if direction == "SHORT" else "dir-wait")
                 st.markdown(f"<div class='direction-tag {dir_class}'>建議方向: {direction}</div>", unsafe_allow_html=True)
 
-                st.metric("掛單 (Entry)", f"{setup.get('entry', 'N/A'):.4f}")
-                st.metric("止損 (SL)", f"{setup.get('sl', 'N/A'):.4f}")
-                st.metric("止盈 (TP)", f"{setup.get('tp', 'N/A'):.4f}")
+                # 交易計畫 Metric 橫向排版 (視覺升級)
+                col_setup = st.columns(3)
+                col_setup[0].metric("掛單 (Entry)", f"{setup.get('entry', 'N/A'):.4f}")
+                col_setup[1].metric("止損 (SL)", f"{setup.get('sl', 'N/A'):.4f}")
+                col_setup[2].metric("止盈 (TP)", f"{setup.get('tp', 'N/A'):.4f}")
                 
                 st.markdown("---")
-                st.subheader("🧮 關鍵點位總覽")
-                fib_0618 = struct_data['fibs'].get('0.618', 'N/A')
-                st.metric("Fib 0.618", f"{fib_0618:.4f}" if isinstance(fib_0618, float) else "N/A")
-                st.metric("SMC 壓力位 (R)", f"{struct_data['res_struct']:.4f}")
-                st.metric("SMC 支撐位 (S)", f"{struct_data['sup_struct']:.4f}")
                 
-                st.markdown("---")
-                st.subheader("📊 EMA 趨勢參考")
+                # 關鍵點位總覽 (使用 Expander 提高整潔度)
+                with st.expander("🧮 關鍵點位總覽"):
+                    fib_0618 = struct_data['fibs'].get('0.618', 'N/A')
+                    st.metric("Fib 0.618", f"{fib_0618:.4f}" if isinstance(fib_0618, float) else "N/A")
+                    st.metric("SMC 壓力位 (R)", f"{struct_data['res_struct']:.4f}")
+                    st.metric("SMC 支撐位 (S)", f"{struct_data['sup_struct']:.4f}")
                 
-                ema_text = (
-                    f"{tech_htf['ema20']:.4f}" if not np.isnan(tech_htf['ema20']) else "N/A"
-                ) + " / " + (
-                    f"{tech_htf['ema50']:.4f}" if not np.isnan(tech_htf['ema50']) else "N/A"
-                ) + " / " + (
-                    f"{tech_htf['ema100']:.4f}" if not np.isnan(tech_htf['ema100']) else "N/A"
-                )
-                st.metric(f"宏觀 {htf} EMA20/50/100", ema_text)
-                st.metric("微觀 EMA9/13", f"{struct_data['ema9']:.4f} / {struct_data['ema13']:.4f}")
+                # EMA 趨勢參考
+                with st.expander("📊 EMA 趨勢參考"):
+                    ema_text = (
+                        f"{tech_htf['ema20']:.4f}" if not np.isnan(tech_htf['ema20']) else "N/A"
+                    ) + " / " + (
+                        f"{tech_htf['ema50']:.4f}" if not np.isnan(tech_htf['ema50']) else "N/A"
+                    ) + " / " + (
+                        f"{tech_htf['ema100']:.4f}" if not np.isnan(tech_htf['ema100']) else "N/A"
+                    )
+                    st.metric(f"宏觀 {htf} EMA20/50/100", ema_text)
+                    st.metric("微觀 EMA9/13", f"{struct_data['ema9']:.4f} / {struct_data['ema13']:.4f}")
 
 elif not api_key:
     if not st.session_state.gemini_connected:
