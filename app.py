@@ -4,7 +4,7 @@ import numpy as np
 import requests
 import json
 import plotly.graph_objects as go
-import google_genai as genai
+import google.generativeai as genai
 import re
 from datetime import datetime
 from scipy.stats import linregress
@@ -598,3 +598,4 @@ elif not api_key:
 elif analyze_btn and not api_key:
 
      st.error("請輸入 Gemini API Key 後再進行分析！")
+
