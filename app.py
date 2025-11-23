@@ -4,7 +4,7 @@ import numpy as np
 import requests
 import json
 import plotly.graph_objects as go
-import google.generativeai as genai
+import google_genai as genai
 import re
 from datetime import datetime
 from scipy.stats import linregress
@@ -596,4 +596,5 @@ elif not api_key:
     if not st.session_state.gemini_connected:
         st.info("👈 請先輸入 Gemini API Key，然後點擊「連線測試」按鈕。")
 elif analyze_btn and not api_key:
+
      st.error("請輸入 Gemini API Key 後再進行分析！")
