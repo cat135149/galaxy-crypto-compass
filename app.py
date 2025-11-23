@@ -10,22 +10,24 @@ from scipy.stats import linregress
 
 # ==========================================
 # 🚨 最終修復區塊：處理 google.generativeai 導入的容錯機制
-# Render/Docker 環境的路徑問題，必須使用 try-except 處理
+# 這是為了確保在 Render/Docker 環境中，無論模組路徑如何，程式都能找到 genai
 # ==========================================
 try:
+    # 標準導入方式 (應對成功安裝情況)
     import google.generativeai as genai
 except (ModuleNotFoundError, ImportError):
-    # 如果標準導入失敗，嘗試使用 Render/Docker 環境中可能存在的替代名稱
-    # 這是解決 ModuleNotFoundError 的最終策略
+    # 如果標準導入失敗，這是解決 Render/Docker 環境的模組名稱路徑錯誤的最終策略
     try:
+        # 嘗試使用套件在某些環境中的替代名稱
         import google_genai as genai
     except (ModuleNotFoundError, ImportError):
-        # 如果兩者都失敗，我們設定 genai 讓程式碼可以繼續執行，但在 AnalystAI 中會報錯
+        # 如果兩者都失敗，我們設定一個 Mock 類別，讓程式碼可以繼續執行，但會報連線失敗
         class MockGenai:
             def configure(self, api_key): pass
             def GenerativeModel(self, model):
                 class MockModel:
                     def generate_content(self, prompt):
+                        # 當 SDK 導入徹底失敗時，拋出明確的錯誤訊息
                         raise Exception("Gemini SDK 導入失敗，無法連接 AI 服務。")
                 return MockModel()
         genai = MockGenai()
@@ -45,7 +47,7 @@ if 'api_key_input' not in st.session_state:
 if 'last_used_model' not in st.session_state:
     st.session_state.last_used_model = "N/A" # 儲存實際用於生成報告的模型
 
-# --- 賽博龐克風格 CSS (保持不變) ---
+# --- 賽博龐克風格 CSS ---
 st.markdown("""
 <style>
     /* 基礎設置 */
@@ -371,7 +373,7 @@ class AnalystAI:
         self.models = ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-2.0-flash']
     
     def test_connection(self):
-        # 處理 MockGenai 的情況
+        # 處理 MockGenai 的情況（如果導入完全失敗）
         if genai.__class__.__name__ == 'MockGenai':
             return False, "Gemini SDK 導入失敗，請檢查 Dockerfile 或 requirements.txt", ""
 
@@ -450,7 +452,7 @@ class AnalystAI:
                         "sl": float(sl_match.group(1)) if sl_match else "N/A",
                         "tp": float(tp_match.group(1)) if tp_match else "N/A",
                     },
-                    "used_model": m # 記錄實際使用的模型
+                    "used_model": m # 記錄實際用於生成報告的模型
                 }
                 return report_data
             except Exception as e:
@@ -625,4 +627,4 @@ elif not api_key:
     if not st.session_state.gemini_connected:
         st.info("👈 請先輸入 Gemini API Key，然後點擊「連線測試」按鈕。")
 elif analyze_btn and not api_key:
-     st.error("請輸入 Gemini API Key 後再進行分析！")
+    st.error("請輸入 Gemini API Key 後再進行分析！")
